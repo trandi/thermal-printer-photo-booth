@@ -8,6 +8,7 @@ import Codec.Picture.Extra
 import Data.Char
 import Data.Bits
 import Data.Word
+import Data.Foldable
 import System.Hardware.Serialport
 import qualified Data.ByteString.Char8 as B
 
@@ -17,42 +18,70 @@ main = do
         Left msg -> print msg
         Right img -> do
             let printableImg = transformImage img
-            savePngImage "out.png" (ImageY8 printableImg)
-            sendToPrinter printableImg
+            savePngImage "test-transformed.png" (ImageY8 printableImg)
+            sendImgToPrinter printableImg
             print "Done"
 
 
 
 
 port = "/dev/ttyUSB0"
-sendToPrinter :: Image Pixel8 -> IO ()
-sendToPrinter img = do
-    sp <- openSerial port defaultSerialSettings {commSpeed = CS19200}
 
-    let stripesBytes = fmap (\stripe -> stripeToBytes stripe) (imageToStripes img) :: [[Char]]
+sendImgToPrinter :: Image Pixel8 -> IO ()
+sendImgToPrinter img = do
+    port <- openSerial port defaultSerialSettings {commSpeed = CS19200}
+    
+    let stripes = imageToStripes img :: [Image Pixel8]
+    
+    let stripesBytes = fmap (\stripe -> stripeToBytes stripe) stripes :: [[Char]]
     let stripesPrinterStrings = fmap (\stripeBytes -> stripeBytesToPrinterString stripeBytes ) stripesBytes :: [String]
+    -- below will actuall write to the serial port
+    let totalBytesSentIO = foldl' (sendStringToPrinter port) (return 0) stripesPrinterStrings
 
-    let totalBytesSent = foldl' (\printerStr -> send sp (B.pack printerStr)) 0 stripesPrinterStrings
-
-    print ("Sent " ++ (show bytesSent) ++ " bytes to the printer.")
-
+    totalBytesSent <- totalBytesSentIO
+    print ("Sent " ++ (show totalBytesSent) ++ " bytes to the printer.")
 
 
+
+sendStringToPrinter :: SerialPort -> IO Int -> String -> IO Int
+sendStringToPrinter port bytesSentUntilNow printerStr = 
+    fmap sum (sequence [bytesSentUntilNow, bytesSent])
+    where
+        bytesSent = send port (B.pack printerStr)
+    
+
+-- split the image into 8dots high bands / stripes
 imageToStripes :: Image Pixel8 -> [Image Pixel8]
--- TODO
+imageToStripes img@(Image width height _) = 
+    fmap (\row -> crop 0 row width 8 img) [0, 8..(height-1)]
 
+-- the thermal printer wants a stripe to be send as 1 command (ie between ESC* and NewLine)
 stripeToBytes :: Image Pixel8 -> [Char]
--- TODO
+stripeToBytes img@(Image width height _) =
+    fmap ( chr . column8PixelsToPrinterChar . (extractColumn img height)) [0..(width-1)]
+
+extractColumn :: Image Pixel8 -> Int -> Int -> [Pixel8]
+extractColumn img height col = fmap (\row -> pixelAt img col row) [0..(height - 1)]
+
+column8PixelsToPrinterChar :: [Pixel8] -> Int
+column8PixelsToPrinterChar pixels = 
+    foldl' (\acc (index, pixelValue) -> acc + if isBlack pixelValue then 2^index else 0 ) 0 pixelsWithIndices
+    where
+        pixelsWithIndices = zip [0..] (reverse pixels) :: [(Int, Pixel8)]
+        
 
 
+-- we take any image, but need to scale it to fit on the paper, make it grey and then Black&White
 transformImage :: DynamicImage -> Image Pixel8
 transformImage = greyToBW . rgb8ToGrey . scaleImage
+
 
 scaleImage ::  DynamicImage -> Image PixelRGB8
 scaleImage img = scaleBilinear width height rgb8Img
     where rgb8Img = convertRGB8 img
           width = 180
           height = (imageHeight rgb8Img) * width `div` (imageWidth rgb8Img) -- keep ratio
+
 
 rgb8ToGrey :: Image PixelRGB8 -> Image Pixel8
 rgb8ToGrey = pixelMap pixelAvg
@@ -65,10 +94,12 @@ greyToBW = pixelMap blackOrWhite
 
 blackOrWhite :: Pixel8 -> Pixel8
 blackOrWhite value
-    | value < 100 = 0
+    | isBlack value = 0
     | otherwise = 255
 
 
+isBlack :: Pixel8 -> Bool
+isBlack = (<128)
 
 
 

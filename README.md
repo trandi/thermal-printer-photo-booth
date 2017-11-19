@@ -7,3 +7,7 @@ cabal sandbox init
 cabal install ...missing packages, like JuicyPixels, serialport etc. ...  
 cabal build  
 cabal run  
+
+
+Test photo by Lennart kcotsttiw from Pexels (CC0 License)
+https://www.pexels.com/photo/portrait-of-man-316680/
