@@ -13,7 +13,6 @@ import System.Hardware.Serialport
 import qualified Data.ByteString.Char8 as B
 
 import Text.Printf
-import Control.DeepSeq
 
 main = do
     eitherImg <- readImage "test.jpg"
