@@ -50,7 +50,7 @@ sendImgToPrinter img = do
 
     -- below will actuall write to the serial port. 
     -- printing starts from the bottom of the image, so reverse the list
-    let totalBytesSentIO = foldl' (sendStringToPrinter port) (return 0) (reverse stripesPrinterStrings)
+    let totalBytesSentIO = foldl' (sendStringToPrinter port) (return 0) stripesPrinterStrings
 
     totalBytesSent <- totalBytesSentIO
     print ("Sent " ++ (show totalBytesSent) ++ " bytes to the printer.")
@@ -84,7 +84,7 @@ column8PixelsToPrinterChar :: [Pixel8] -> Int
 column8PixelsToPrinterChar pixels = 
     foldl' (\acc (index, pixelValue) -> acc + if isBlack pixelValue then 2^index else 0 ) 0 pixelsWithIndices
     where
-        pixelsWithIndices = zip [0..] (reverse pixels) :: [(Int, Pixel8)]
+        pixelsWithIndices = zip [0..] pixels :: [(Int, Pixel8)]
         
 
 
