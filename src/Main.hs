@@ -33,27 +33,27 @@ sendImgToPrinter :: Image Pixel8 -> IO ()
 sendImgToPrinter img = do
     port <- openSerial port defaultSerialSettings {commSpeed = CS19200}
 
-    configBytesSent <- printerConfig_RemoveSpacingBetweenLines port
-    print ("Printer configured. " ++ show configBytesSent ++ " bytes sent.")
+    printerConfig_RemoveSpacingBetweenLines port
     
     let stripes = imageToStripes img :: [Image Pixel8]
 
---    let indexedStripes = zip [0..] stripes
---    temp <- sequence (fmap (\(i, stripe) -> savePngImage ("out"++ (show i) ++ ".png") (ImageY8 stripe)) indexedStripes )
---    print ("Temp " ++ show (length temp))
+    --saveImages stripes
     
-    let stripesBytes = fmap (\stripe -> stripeToBytes stripe) stripes :: [[Char]]
+    let stripesBytes = fmap (\stripe -> stripeToBytes stripe) (reverse stripes) :: [[Char]]
     let stripesPrinterStrings = fmap (\stripeBytes -> stripeBytesToPrinterString stripeBytes ) stripesBytes :: [String]
     
---    let indexedStrings = zip [0..] stripesPrinterStrings
---    temp2 <- sequence (fmap (\(i, str) -> do { print (show i) ; charsAsHex str ; print ""} ) indexedStrings)
+    --printStringsAsHex stripesPrinterStrings
 
     -- below will actuall write to the serial port. 
-    -- printing starts from the bottom of the image, so reverse the list
     let totalBytesSentIO = foldl' (sendStringToPrinter port) (return 0) stripesPrinterStrings
 
     totalBytesSent <- totalBytesSentIO
     print ("Sent " ++ (show totalBytesSent) ++ " bytes to the printer.")
+
+    printerConfig_ReinitPrinterEmptylinesCut port
+
+
+
 
 
 
@@ -82,15 +82,15 @@ extractColumn img height col = fmap (\row -> pixelAt img col row) [0..(height - 
 
 column8PixelsToPrinterChar :: [Pixel8] -> Int
 column8PixelsToPrinterChar pixels = 
-    foldl' (\acc (index, pixelValue) -> acc + if isBlack pixelValue then 2^index else 0 ) 0 pixelsWithIndices
+    foldl' (\acc (index, pixelValue) -> acc + if pixelValue == 0 then 2^index else 0 ) 0 pixelsWithIndices
     where
-        pixelsWithIndices = zip [0..] pixels :: [(Int, Pixel8)]
+        pixelsWithIndices = zip [0..] (reverse pixels) :: [(Int, Pixel8)]
         
 
 
 -- we take any image, but need to scale it to fit on the paper, make it grey and then Black&White
 transformImage :: DynamicImage -> Image Pixel8
-transformImage = greyToBW . rgb8ToGrey . scaleImage
+transformImage = greyToBW . imageRGB8toGrey . scaleImage
 
 
 scaleImage ::  DynamicImage -> Image PixelRGB8
@@ -104,24 +104,26 @@ divAsFloat :: Int -> Int -> Float
 divAsFloat a b = (fromIntegral a) / (fromIntegral b)
 
 
-rgb8ToGrey :: Image PixelRGB8 -> Image Pixel8
-rgb8ToGrey = pixelMap pixelAvg
+imageRGB8toGrey :: Image PixelRGB8 -> Image Pixel8
+imageRGB8toGrey = pixelMap pixelRGB8toGrey
 
-pixelAvg :: PixelRGB8 -> Pixel8
-pixelAvg (PixelRGB8 r g b) = (r `div` 3 + g `div` 3 + b `div` 3 + (r `mod` 3 + g `mod` 3 + b `mod` 3) `div` 3)
+-- transforms RGB to grey by simply taking the average of the 3 colour channels
+pixelRGB8toGrey :: PixelRGB8 -> Pixel8
+pixelRGB8toGrey (PixelRGB8 r g b) = (r `div` 3 + g `div` 3 + b `div` 3 + (r `mod` 3 + g `mod` 3 + b `mod` 3) `div` 3)
 
+-- Compare each pixel with the average of the image. If below -> it becomes ablack dot (0), otherwise white (255)
 greyToBW :: Image Pixel8 -> Image Pixel8
-greyToBW = pixelMap blackOrWhite
-
-blackOrWhite :: Pixel8 -> Pixel8
-blackOrWhite value
-    | isBlack value = 0
-    | otherwise = 255
+greyToBW img = pixelMap (\pixel -> if pixel < avgPixel then 0 else 255) img
+    where avgPixel = greyImagePixelsAvg img
 
 
-isBlack :: Pixel8 -> Bool
-isBlack = (<100)
-
+-- using Integer to avoid arithmetic overflows when summing up all the pixels in the image
+greyImagePixelsAvg :: Image Pixel8 -> Pixel8
+greyImagePixelsAvg img@(Image width height _) = 
+    fromIntegral (totalSum `div` fromIntegral (width * height))
+    where 
+        allIndices = [(i, j) | i <- [0..(width-1)], j <- [0..(height-1)]]
+        totalSum = foldl' (\acc (i, j) -> acc + fromIntegral (pixelAt img i j)) 0 allIndices :: Integer
 
 
 
@@ -139,16 +141,38 @@ generateNlNh list = [chr (l .&. 0xFF), chr ((shift l (-8)) .&. 0xFF)]
     where l = length list
 
 
-printerConfig_RemoveSpacingBetweenLines :: SerialPort -> IO Int
-printerConfig_RemoveSpacingBetweenLines port = 
+printerConfig_RemoveSpacingBetweenLines :: SerialPort -> IO ()
+printerConfig_RemoveSpacingBetweenLines port = do
     -- set no spacing between lines  "ESC 3 n" (where n is 0)
     sendStringToPrinter port (return 0) [chr 0x1B, chr 0x33, chr 0, new_line]
+    return ()
 
+printerConfig_ReinitPrinterEmptylinesCut :: SerialPort -> IO ()
+printerConfig_ReinitPrinterEmptylinesCut port = do
+    -- ESC @ for reinit the printer, then new lines, then ESC i   for cutting
+    sendStringToPrinter port (return 0) [chr 0x1B, chr 0x40, new_line, new_line, new_line, new_line, chr 0x1B, chr 0x69, new_line]
+    return ()
+
+
+
+-- *********** DEBUG utility functions ***************
+
+printStringsAsHex :: [String] -> IO ()
+printStringsAsHex strs = do
+    sequence (fmap (\(i, str) -> do { print (show i) ; charsAsHex str ; print ""} ) indexedStrings)
+    print ("Done printing strings as HEX.")
+    where
+        indexedStrings = zip [0..] strs
 
 -- takes each char in this string and displays it's hex value
---charsAsHex :: String -> IO [()]
---charsAsHex str = sequence (fmap (\c -> printf "%02x" c) str)
+charsAsHex :: String -> IO [()]
+charsAsHex str = sequence (fmap (\c -> printf "%02x" c) str)
 
-
+saveImages :: [Image Pixel8] -> IO ()
+saveImages imgs = do
+    temp <- sequence (fmap (\(i, stripe) -> savePngImage ("out"++ (show i) ++ ".png") (ImageY8 stripe)) indexedImgs )
+    print ("Images saved " ++ show (length temp))
+    where
+        indexedImgs = zip [0..] imgs
 
 
