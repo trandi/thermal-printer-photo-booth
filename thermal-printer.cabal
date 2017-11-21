@@ -1,9 +1,0 @@
-name:              thermal-printer-photo-booth
-version:           1.0
-Build-Type:        Simple
-cabal-version:     >= 1.2
-
-executable thermal-printer-photo-booth
-  main-is:         Main.hs
-  hs-source-dirs:  src
-  build-depends:   base,JuicyPixels,JuicyPixels-extra,serialport,bytestring

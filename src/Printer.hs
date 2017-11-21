@@ -17,6 +17,7 @@ stripeToBytes img@(Image width height _) =
 extractColumn :: Image Pixel8 -> Int -> Int -> [Pixel8]
 extractColumn img height col = fmap (\row -> pixelAt img col row) [0..(height - 1)]
 
+-- black dots will have "0" Pixel8 value and should become a "1" in the binary representation for the printer
 column8PixelsToPrinterChar :: [Pixel8] -> Int
 column8PixelsToPrinterChar pixels = 
     foldl' (\acc (index, pixelValue) -> acc + if pixelValue == 0 then 2^index else 0 ) 0 pixelsWithIndices
