@@ -19,16 +19,15 @@ imageToStripes img@(Image width height _) =
 
 
 -- we take any image, but need to scale it to fit on the paper, make it grey and then Black&White
-transformImage :: DynamicImage -> Image Pixel8
-transformImage = greyToBW . imageRGB8toGrey . scaleImage
+transformImage :: Bool -> DynamicImage -> Image Pixel8
+transformImage scale = greyToBW . imageRGB8toGrey . (if scale then scaleImage else id ) . convertRGB8
 
 
-scaleImage ::  DynamicImage -> Image PixelRGB8
-scaleImage img = scaleBilinear width height rgb8Img
-    where rgb8Img = convertRGB8 img
-          width = scaledWidth
-          -- keep ratio, but the dots are taller in size than they are wide, hence the empiric 0.7 coefficient
-          height = round ((fromIntegral (imageHeight rgb8Img)) * (divAsFloat width (imageWidth rgb8Img)) * 0.7) 
+scaleImage ::  Image PixelRGB8 -> Image PixelRGB8
+scaleImage img = scaleBilinear width height img
+    where width = scaledWidth
+          -- keep ratio, but dots are taller than they are wide, hence the empiric 0.7 coefficient
+          height = round ((fromIntegral (imageHeight img)) * (divAsFloat width (imageWidth img)) * 0.7) 
 
 divAsFloat :: Int -> Int -> Float
 divAsFloat a b = (fromIntegral a) / (fromIntegral b)

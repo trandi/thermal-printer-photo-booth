@@ -10,18 +10,21 @@ import Data.Foldable
 import System.Hardware.Serialport
 import qualified Data.ByteString.Char8 as B
 import Text.Printf
+import System.Environment
 
 
 port = "/dev/ttyUSB0"
 
 
 main = do
-    eitherImg <- readImage "test.jpg"
+    progArgs <- getArgs
+    eitherImg <- readImage (progArgs !! 0)
+    let scaleImg = (progArgs !! 1) == "scale"
     case eitherImg of
         Left msg -> print msg
         Right img -> do
-            let printableImg = transformImage img
-            savePngImage "test-transformed.png" (ImageY8 printableImg)
+            let printableImg = transformImage scaleImg img
+            savePngImage "transformed.png" (ImageY8 printableImg)
             sendImgToPrinter printableImg
             print "Done"
 
